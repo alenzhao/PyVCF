@@ -447,7 +447,7 @@ class _AltRecord(object):
         raise NotImplementedError
 
     def __eq__(self, other):
-        return self.type == other.type
+        return self.type == getattr(other, 'type', None)
 
 
 class _Substitution(_AltRecord):

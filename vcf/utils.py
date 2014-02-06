@@ -2,50 +2,59 @@
 Utilities for VCF files.
 """
 
-def walk_together(*readers, **kwargs):	
-	""" Simultaneously iteratate two or more VCF readers and return
-		lists of concurrent records from each
-		reader, with None if no record present.  Caller must check the
-		inputs are sorted in the same way and use the same reference
-		otherwise behaviour is undefined.
-		
-		Args:
-			vcf_record_sort_key: function that takes a VCF record and returns a tuple that can be used as the key for comparing and sorting VCF records across all given VCFReaders. The tuple's 1st element should be the contig name.
-	"""
-	if 'vcf_record_sort_key' in kwargs:
-		get_key = kwargs['vcf_record_sort_key']
-	else:
-		get_key = lambda r: (r.CHROM, r.POS)
-	
-	nexts = []
-	for reader in readers:
-		try:
-			nexts.append(reader.next())
-		except StopIteration:
-			nexts.append(None)
+def walk_together(*readers, **kwargs):
+    """
+    Simultaneously iteratate over two or more VCF readers. For each 
+    genomic position with a variant, return a list of size equal to the number 
+    of VCF readers. This list contains the VCF record from readers that have
+    this variant, and None for readers that don't have it. 
+    The caller must make sure that inputs are sorted in the same way and use the 
+    same reference otherwise behaviour is undefined.
 
-	min_k = (None,)   # keep track of the previous min key's contig
-	while True:
-		kdict = {i: get_key(x) for i,x in enumerate(nexts) if x is not None}
-		keys_with_prev_contig = [k for k in kdict.values() if k[0] == min_k[0]]
-		if any(keys_with_prev_contig):
-			# finish all records from previous contig	
-			min_k = min(keys_with_prev_contig) 
-		else:			
-			# move on to the next contig
-			min_k = min(kdict.values())  
-		
-		min_k_idxs = set([i for i, k in kdict.items() if k == min_k])
-		yield [nexts[i] if i in min_k_idxs else None for i in range(len(nexts))]
+    Args:
+        vcf_record_sort_key: function that takes a VCF record and returns a 
+            tuple that can be used as a key for comparing and sorting VCF 
+            records across all readers. This tuple defines what it means for two 
+            variants to be equal (eg. whether it's only their position or also 
+            their allele values), and implicitly determines the chromosome 
+            ordering since the tuple's 1st element is typically the chromosome 
+            name (or calculated from it).
+    """
+    if 'vcf_record_sort_key' in kwargs:
+        get_key = kwargs['vcf_record_sort_key']
+    else:
+        get_key = lambda r: (r.CHROM, r.POS) #, r.REF, r.ALT)
 
-		for i in min_k_idxs:
-			try:
-				nexts[i] = readers[i].next()
-			except StopIteration:
-				nexts[i] = None
-				
-		if all([x is None for x in nexts]):
-			break
+    nexts = []
+    for reader in readers:
+        try:
+            nexts.append(reader.next())
+        except StopIteration:
+            nexts.append(None)
+
+    min_k = (None,)   # keep track of the previous min key's contig
+    while True:
+        next_idx_to_k = dict(
+            (i, get_key(r)) for i, r in enumerate(nexts) if r is not None)
+        keys_with_prev_contig = [
+            k for k in next_idx_to_k.values() if k[0] == min_k[0]]
+
+        if any(keys_with_prev_contig):
+            min_k = min(keys_with_prev_contig)   # finish previous contig
+        else:
+            min_k = min(next_idx_to_k.values())   # move on to next contig
+
+        min_k_idxs = set([i for i, k in next_idx_to_k.items() if k == min_k])
+        yield [nexts[i] if i in min_k_idxs else None for i in range(len(nexts))]
+
+        for i in min_k_idxs:
+            try:
+                nexts[i] = readers[i].next()
+            except StopIteration:
+                nexts[i] = None
+                
+        if all([r is None for r in nexts]):
+            break
 
 
 def trim_common_suffix(*sequences):
