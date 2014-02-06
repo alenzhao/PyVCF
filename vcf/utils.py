@@ -33,7 +33,7 @@ def walk_together(*readers, **kwargs):
             nexts.append(None)
 
     min_k = (None,)   # keep track of the previous min key's contig
-    while True:
+    while any([r is not None for r in nexts]):
         next_idx_to_k = dict(
             (i, get_key(r)) for i, r in enumerate(nexts) if r is not None)
         keys_with_prev_contig = [
@@ -52,9 +52,6 @@ def walk_together(*readers, **kwargs):
                 nexts[i] = readers[i].next()
             except StopIteration:
                 nexts[i] = None
-                
-        if all([r is None for r in nexts]):
-            break
 
 
 def trim_common_suffix(*sequences):
