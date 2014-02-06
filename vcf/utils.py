@@ -2,51 +2,50 @@
 Utilities for VCF files.
 """
 
-import operator
+def walk_together(*readers, **kwargs):	
+	""" Simultaneously iteratate two or more VCF readers and return
+		lists of concurrent records from each
+		reader, with None if no record present.  Caller must check the
+		inputs are sorted in the same way and use the same reference
+		otherwise behaviour is undefined.
+		
+		Args:
+			vcf_record_sort_key: function that takes a VCF record and returns a tuple that can be used as the key for comparing and sorting VCF records across all given VCFReaders. The tuple's 1st element should be the contig name.
+	"""
+	if 'vcf_record_sort_key' in kwargs:
+		get_key = kwargs['vcf_record_sort_key']
+	else:
+		get_key = lambda r: (r.CHROM, r.POS)
+	
+	nexts = []
+	for reader in readers:
+		try:
+			nexts.append(reader.next())
+		except StopIteration:
+			nexts.append(None)
 
+	min_k = (None,)   # keep track of the previous min key's contig
+	while True:
+		kdict = {i: get_key(x) for i,x in enumerate(nexts) if x is not None}
+		keys_with_prev_contig = [k for k in kdict.values() if k[0] == min_k[0]]
+		if any(keys_with_prev_contig):
+			# finish all records from previous contig	
+			min_k = min(keys_with_prev_contig) 
+		else:			
+			# move on to the next contig
+			min_k = min(kdict.values())  
+		
+		min_k_idxs = set([i for i, k in kdict.items() if k == min_k])
+		yield [nexts[i] if i in min_k_idxs else None for i in range(len(nexts))]
 
-def walk_together(*readers, **kwargs):
-    """ Simultaneously iteratate two or more VCF readers and return
-        lists of concurrent records from each
-        reader, with None if no record present.  Caller must check the
-        inputs are sorted in the same way and use the same reference
-        otherwise behaviour is undefined.
-    """
-    # if defined, custom equality functions must take the same arguments
-    # as operator.eq
-    if 'eq_func' in kwargs:
-        eq_func = kwargs['eq_func']
-    # by default, we use the equality operator (==), which compares
-    # equality in CHROM, POS, REF, and ALT
-    else:
-        eq_func = operator.eq
-
-    # if one of the VCFs has no records, StopIteration is
-    # raised immediately, so we need to check for that and
-    # deal appropriately
-    nexts = []
-    for reader in readers:
-        try:
-            nexts.append(reader.next())
-        except StopIteration:
-            nexts.append(None)
-
-    while True:
-        min_next = min([x for x in nexts if x is not None])
-
-        yield [x if x is None or eq_func(x, min_next) else None for x in nexts]
-
-        # update nexts that we just yielded
-        for i, n in enumerate(nexts):
-
-            if n is not None and eq_func(n, min_next):
-                try:
-                    nexts[i] = readers[i].next()
-                except StopIteration:
-                    nexts[i] = None
-
-        if all([x is None for x in nexts]):
-            break
+		for i in min_k_idxs:
+			try:
+				nexts[i] = readers[i].next()
+			except StopIteration:
+				nexts[i] = None
+				
+		if all([x is None for x in nexts]):
+			break
 
 
 def trim_common_suffix(*sequences):
