@@ -934,13 +934,11 @@ class TestUtils(unittest.TestCase):
         self.assertEqual(n, 5)
 
         # artificial case 2 from the left, 2 from the right, 2 together, 1 from the right, 1 from the left
-
         expected = 'llrrttrl'
         reader1 = vcf.Reader(fh('walk_left.vcf'))
         reader2 = vcf.Reader(fh('example-4.0.vcf'))
 
         for ex, recs in zip(expected, utils.walk_together(reader1, reader2)):
-
             if ex == 'l':
                 assert recs[0] is not None
                 assert recs[1] is None
@@ -950,42 +948,22 @@ class TestUtils(unittest.TestCase):
             if ex == 't':
                 assert recs[0] is not None
                 assert recs[1] is not None
+        
+        # test files with many chromosomes, set 'vcf_record_sort_key' to define chromosome order
+        chr_order = map(str, range(1, 30)) + ['X', 'Y', 'M']
+        get_key = lambda r: (chr_order.index(r.CHROM.replace('chr','')), r.POS)
+        reader1 = vcf.Reader(fh('issue-140-file1.vcf'))
+        reader2 = vcf.Reader(fh('issue-140-file2.vcf'))
+        reader3 = vcf.Reader(fh('issue-140-file3.vcf'))
+        expected = "66642577752767662466" # each char is an integer bit flag - like file permissions
+        for ex, recs in zip(expected, utils.walk_together(reader1, reader2, reader3, vcf_record_sort_key = get_key)):
+            ex = int(ex)
+            for i, flag in enumerate([0x4, 0x2, 0x1]):
+                if ex & flag:
+                     self.assertNotEqual(recs[i], None)
+                else:
+                     self.assertEqual(recs[i], None)
 
-        # case with working custom equality function
-
-        # without custom function, exception should be raised
-
-        reader1 = vcf.Reader(fh('example-4.0.vcf'))
-        reader2 = vcf.Reader(fh('walk_refcall.vcf'))
-        #self.assertRaises(AttributeError, next,
-        #                  utils.walk_together(reader1, reader2))
-
-        # with custom function, iteration works
-
-        reader1 = vcf.Reader(fh('example-4.0.vcf'))
-        reader2 = vcf.Reader(fh('walk_refcall.vcf'))
-
-        def custom_eq(rec1, rec2):
-            # check for equality only on CHROM, POS, and REF
-            if rec1 is None or rec2 is None:
-                return False
-            return rec1.CHROM == rec2.CHROM and rec1.POS == rec2.POS and \
-                    rec1.REF == rec2.REF
-
-        nrecs, ncomps = 0, 0
-        for x in utils.walk_together(reader1, reader2, eq_func=custom_eq):
-            self.assertEqual(len(x), 2)
-            # avoid assert() when one record is None
-            if x[0] is not None and x[1] is not None:
-                assert (custom_eq(x[0], x[1]) and custom_eq(x[1], x[0]))
-                ncomps += 1
-            # still increment counter to ensure iteration is finished for all
-            # records
-            nrecs += 1
-        # check number of records total
-        self.assertEqual(nrecs, 5)
-        # check how many records found in all files
-        self.assertEqual(ncomps, 4)
 
     def test_trim(self):
         tests = [('TAA GAA', 'T G'),
