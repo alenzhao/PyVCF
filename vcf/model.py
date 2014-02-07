@@ -36,9 +36,9 @@ class _Call(object):
         """ Two _Calls are equal if their _Records are equal
             and the samples and ``gt_type``s are the same
         """
-        return (self.site == other.site
-                and self.sample == other.sample
-                and self.gt_type == other.gt_type)
+        return (self.site == getattr(other, "site", None)
+                and self.sample == getattr(other, "sample", None)
+                and self.gt_type == getattr(other, "gt_type", None))
 
     def __getstate__(self):
         return dict((attr, getattr(self, attr)) for attr in self.__slots__)
@@ -150,19 +150,19 @@ class _Record(object):
 
     # For Python 2
     def __cmp__(self, other):
-        return cmp((self.CHROM, self.POS), (other.CHROM, other.POS))
+        return cmp((self.CHROM, self.POS), (getattr(other, "CHROM", None), getattr(other, "POS", None)))
 
     # For Python 3
     def __eq__(self, other):
         """ _Records are equal if they describe the same variant (same position, alleles) """
-        return (self.CHROM == other.CHROM and
-                self.POS == other.POS and
-                self.REF == other.REF and
-                self.ALT == other.ALT)
+        return (self.CHROM == getattr(other, "CHROM", None) and
+                self.POS == getattr(other, "POS", None) and
+                self.REF == getattr(other, "REF", None) and
+                self.ALT == getattr(other, "ALT", None))
 
     # For Python 3
     def __lt__(self, other):
-        return (self.CHROM, self.POS) < (other.CHROM, other.POS)
+        return (self.CHROM, self.POS) < (getattr(other, "CHROM", None), getattr(other, "POS", None))
 
     def __iter__(self):
         return iter(self.samples)
@@ -524,12 +524,12 @@ class _Breakend(_AltRecord):
 
     def __eq__(self, other):
         return super(_Breakend, self).__eq__(other) \
-                and self.chr == other.chr \
-                and self.pos == other.pos \
-                and self.remoteOrientation == other.remoteOrientation \
-                and self.withinMainAssembly == other.withinMainAssembly \
-                and self.orientation == other.orientation \
-                and self.connectingSequence == other.connectingSequence
+                and self.chr == getattr(other, "chr", None) \
+                and self.pos == getattr(other, "pos", None) \
+                and self.remoteOrientation == getattr(other, "remoteOrientation", None) \
+                and self.withinMainAssembly == getattr(other, "withinMainAssembly", None) \
+                and self.orientation == getattr(other, "orientation", None) \
+                and self.connectingSequence == getattr(other, "connectingSequence", None)
 
 
 class _SingleBreakend(_Breakend):
