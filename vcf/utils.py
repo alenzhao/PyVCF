@@ -8,8 +8,6 @@ def walk_together(*readers, **kwargs):
     genomic position with a variant, return a list of size equal to the number 
     of VCF readers. This list contains the VCF record from readers that have
     this variant, and None for readers that don't have it. 
-    The caller must make sure that inputs are sorted in the same way and use the 
-    same reference otherwise behaviour is undefined.
 
     Args:
         vcf_record_sort_key: function that takes a VCF record and returns a 
@@ -19,12 +17,21 @@ def walk_together(*readers, **kwargs):
             their allele values), and implicitly determines the chromosome 
             ordering since the tuple's 1st element is typically the chromosome 
             name (or calculated from it).
+        ignore_chr: (default True) 'chrX' and 'X' will be considered equal. Only
+            used if vcf_record_sort_key is not set.
+        check_contig_order: (default True) raise an exception if readers have 
+            incompatible contig orderings (eg. 1, 10, 2 .. vs.  1, 2, 10 ..)
     """
-    if 'vcf_record_sort_key' in kwargs:
+    check_contig_order = kwargs.get('check_contig_order', True)
+    is_user_defined_key = 'vcf_record_sort_key' in kwargs
+    if is_user_defined_key:
         get_key = kwargs['vcf_record_sort_key']
     else:
-        get_key = lambda r: (r.CHROM, r.POS) #, r.REF, r.ALT)
-
+        if kwargs.get('ignore_chr', True):
+            get_key = lambda r: (r.CHROM.replace('chr', ''), r.POS)
+        else:
+            get_key = lambda r: (r.CHROM, r.POS)
+    
     nexts = []
     for reader in readers:
         try:
@@ -33,6 +40,7 @@ def walk_together(*readers, **kwargs):
             nexts.append(None)
 
     min_k = (None,)   # keep track of the previous min key's contig
+    finished_contigs = []   # used for checking contig order
     while any([r is not None for r in nexts]):
         next_idx_to_k = dict(
             (i, get_key(r)) for i, r in enumerate(nexts) if r is not None)
@@ -43,6 +51,25 @@ def walk_together(*readers, **kwargs):
             min_k = min(keys_with_prev_contig)   # finish previous contig
         else:
             min_k = min(next_idx_to_k.values())   # move on to next contig
+
+            if check_contig_order and len(finished_contigs) > 1:
+                prev_contig = finished_contigs[-1]
+                err = None
+                if is_user_defined_key and prev_contig > min_k[0]:
+                    err = ("Order of '%s', '%s' records in %s (or other VCFs) "
+                        "contradicts the order defined by vcf_record_sort_key")
+                elif min_k[0] in finished_contigs:
+                    # Don't enforce the default contig ordering, since it may 
+                    # not match what's in the VCF files. Just make sure the 
+                    # ordering of emitted contigs is monotonic / without repeats
+                    err = ("The order of contigs '%s' and '%s' is ambiguous or "
+                        "contradictory in %s (or other VCFs). To define the "
+                        "contig order, set the 'vcf_record_sort_key' arg.")
+                if err:
+                    bad_i = [i for i, k in next_idx_to_k.items() if k == min_k]
+                    bad_file = readers[bad_i[0]].filename
+                    raise Exception(err % (prev_contig, min_k[0], bad_file))
+            finished_contigs.append(min_k[0])
 
         min_k_idxs = set([i for i, k in next_idx_to_k.items() if k == min_k])
         yield [nexts[i] if i in min_k_idxs else None for i in range(len(nexts))]
